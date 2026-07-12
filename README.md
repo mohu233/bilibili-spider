@@ -1,4 +1,4 @@
-﻿# Bilibili Spider — B站 福瑞用户识别爬虫
+﻿# Bilibili Spider — B站 furry用户识别爬虫
 
 BFS 广度优先爬取 B站用户关系网络，结合 YOLO 头像检测 + 关键词匹配，自动识别福瑞用户。
 
