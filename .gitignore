@@ -1,0 +1,48 @@
+﻿# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Downloaded images (UID-based)
+avatars/
+hit/
+miss/
+_cache/
+
+# Sensitive / auth files
+cookies.json
+headers.txt
+headers*.txt
+.wbi_cache.json
+
+# Data files (contain UIDs)
+data/*.json
+data/*.bak
+
+# Excel exports (contain user data)
+*.xlsx
+*.xls
+
+# OS files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Backups
+*.bak
+*.bak2
+*.bak3
+
+# Batch scripts
+copy_files.bat
