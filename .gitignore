@@ -46,3 +46,11 @@ $RECYCLE.BIN/
 
 # Batch scripts
 copy_files.bat
+
+# Local collection panel (contains account credentials)
+data/panel/
+.venv-panel/
+.test-runs/
+
+# Generated avatar datasets, predictions and downloaded third-party model weights
+data/avatar_benchmark_*/

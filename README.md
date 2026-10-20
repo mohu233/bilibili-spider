@@ -209,3 +209,11 @@ MIT License - 详见 LICENSE 文件
 ## 免责声明
 
 本工具仅供学习和研究使用。使用者需遵守 B 站服务条款和当地法律法规。
+
+## HTML 可视化采集面板
+
+在项目根目录运行 `.\start_panel.ps1`，然后打开 <http://127.0.0.1:8767>。
+
+支持种子 UID、Furry Yes / No、Cookie 池、分页续采和有上限的种子评分。新采集使用独立空库，旧数据只作参考。完整说明见 [PANEL.md](PANEL.md)。
+
+头像模型对比工具位于 `tools/avatar_benchmark.py`，运行 `python tools/avatar_benchmark.py --help` 查看用法。实验头像、预测结果及下载的第三方权重保留在本机，不随源码提交。

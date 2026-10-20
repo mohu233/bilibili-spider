@@ -1,0 +1,4 @@
+# Separate local panel environment. Existing CLI requirements are unchanged.
+onnxruntime==1.22.1
+Pillow==11.3.0
+numpy>=1.26,<3

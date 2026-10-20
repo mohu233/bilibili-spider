@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light"><title>Furry Lab · 采集工作台</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><img src="/favicon.svg" width="42" height="42" alt=""><span>Furry Lab<small>BILIBILI COLLECTOR</small></span></a>
+    <div class="nav-label">采集工作台</div>
+    <nav aria-label="主导航">
+      <a href="#overview" data-route="overview"><span class="nav-icon">◫</span>总览<span class="nav-arrow">↗</span></a>
+      <a href="#seeds" data-route="seeds"><span class="nav-icon">⌘</span>种子 UID<span class="nav-count" id="navSeeds">0</span></a>
+      <a href="#yes" data-route="yes"><span class="nav-icon">✓</span>Furry Yes<span class="nav-count" id="navYes">0</span></a>
+      <a href="#no" data-route="no"><span class="nav-icon">×</span>Furry No<span class="nav-count" id="navNo">0</span></a>
+    </nav>
+    <div class="nav-label second-label">资源与设置</div>
+    <nav aria-label="设置"><a href="#settings" data-route="settings"><span class="nav-icon">⚙</span>Cookie 池与设置<span class="nav-arrow">↗</span></a></nav>
+    <div class="sidebar-bottom"><div class="local-badge"><i></i> 本地工作空间</div><p>数据保存在当前项目<br><span id="projectPath">正在连接…</span></p><div class="sidebar-note">发现、判断，再继续探索。</div></div>
+  </aside>
+  <main>
+    <header class="topbar"><div class="breadcrumb">WORKSPACE <span>/</span> <b id="breadcrumb">总览</b></div><div class="topbar-right"><span class="connection" id="connection"><i></i> 连接中</span><button class="icon-button" id="refreshButton" title="刷新数据" aria-label="刷新数据">↻</button></div></header>
+    <div class="page">
+      <section class="page-heading"><div><div class="eyebrow"><i></i> COLLECT. CLASSIFY. CONNECT.</div><h1 id="pageTitle">让每一次发现，<span>都有迹可循。</span></h1><p id="pageDescription">从一颗种子开始，建立可追溯的 Furry 关系网络。</p></div><div class="heading-actions"><button class="button secondary" id="exportButton">↓ 导出数据</button><button class="button primary" id="addSeedButton">＋ 添加种子</button></div></section>
+      <div id="fatal" class="alert" role="alert" hidden></div>
+      <section class="stats-grid" aria-label="数据统计">
+        <article class="stat-card"><span class="stat-label">待遍历种子 <span class="stat-symbol">⌘</span></span><strong id="statSeeds">0</strong><small>尚未完成粉丝与关注遍历</small></article>
+        <article class="stat-card"><span class="stat-label">Furry Yes <span class="stat-symbol green">✓</span></span><strong id="statYes">0</strong><small>包含已完成与待遍历种子</small></article>
+        <article class="stat-card"><span class="stat-label">Furry No <span class="stat-symbol muted">×</span></span><strong id="statNo">0</strong><small>保留排除记录，支持人工修正</small></article>
+        <article class="stat-card"><span class="stat-label">遍历完成 <span class="stat-symbol orange">↗</span></span><strong id="statComplete">0</strong><small id="statRelations">已记录 0 条关系</small></article>
+      </section>
+
+      <div id="overviewSection">
+        <div class="fresh-start-note"><span><b>全新采集数据集</b> · 历史资料只作参考，不沿用旧分类、遍历状态或种子得分。</span><button class="text-link" id="viewReferences">查看历史参考 ↗</button></div>
+        <section class="collection-card">
+          <div class="collection-copy"><div class="eyebrow light">YOUR NEXT DISCOVERY</div><h2>好种子，值得优先探索。</h2><p>按得分安排采集，将新的关系转化为下一次发现。<br>每一页进度都会保存，暂停后也可以继续。</p><div class="collection-tags"><span>UID 去重</span><span>分页续采</span><span>人工判定优先</span></div></div>
+          <div class="collection-control"><span class="status-badge" id="jobBadge">尚未启动</span><h3 id="jobTitle">准备好开始了吗？</h3><p id="jobDescription">添加种子与 Cookie 后，启动第一轮采集。</p><div class="job-progress"><div id="jobProgressBar"></div></div><div class="job-meta"><span id="jobProgressText">0 / 10 个 UID</span><span id="jobPhase">等待启动</span></div><div class="job-actions"><button id="startButton" class="button cream">▶ 开始采集</button><button id="stopButton" class="button ghost-light" disabled>Ⅱ 暂停</button></div></div>
+        </section>
+        <div class="overview-grid">
+          <section class="card priority-card"><div class="section-header"><div><div class="eyebrow">SEED PRIORITY</div><h2>种子优先级分布</h2></div><span class="subtle">0–100 分</span></div><div id="histogram" class="histogram" aria-label="种子分数分布"></div><div class="chart-note"><span><i class="legend-dot"></i> 当前未排除的种子</span><a href="#seeds">查看种子池 ↗</a></div></section>
+          <section class="card leaders-card"><div class="section-header"><div><div class="eyebrow">TOP EXPLORERS</div><h2>高价值种子</h2></div><a href="#yes" class="text-link">查看全部 ↗</a></div><div id="leaders"></div></section>
+        </div>
+        <section class="card workflow-card"><div class="section-header"><div><div class="eyebrow">COLLECTION FLOW</div><h2>一条清晰的发现路径</h2></div><span class="subtle">身份判定与遍历状态独立保存</span></div><div class="flow"><div><span>01</span><b>种子 UID</b><small>录入、去重、安排优先级</small></div><i>→</i><div><span>02</span><b>用户资料与头像</b><small>获取简介，下载并识别头像</small></div><i>→</i><div><span>03</span><b>粉丝与关注</b><small>分别分页，保留实际采集进度</small></div><i>→</i><div><span>04</span><b>新的 Furry 发现</b><small>唯一发现计分，进入候选队列</small></div></div></section>
+      </div>
+
+      <section id="dataSection" class="card data-card" hidden>
+        <div class="section-header"><div><div class="eyebrow" id="dataEyebrow">SEED POOL</div><h2 id="dataTitle">等待探索的种子</h2></div><span class="count-label" id="dataCount">共 0 个 UID</span></div>
+        <div class="data-toolbar"><div class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜索昵称或 UID" aria-label="搜索昵称或 UID"></div><select id="statusFilter" aria-label="遍历状态筛选"><option value="">全部状态</option><option value="pending">待遍历</option><option value="partial">部分完成</option><option value="complete">遍历完成</option><option value="review">等待审核</option><option value="failed">采集失败</option></select><select id="sortSelect" aria-label="排序"><option value="score">得分优先</option><option value="discoveries">发现数量优先</option><option value="recent">最近更新</option></select><button class="button secondary compact" id="importLegacy">载入历史参考</button><button class="button secondary compact" id="importBenchmark">从实验清单提取 UID</button></div>
+        <p class="table-help" id="tableHelp">种子页只展示尚未完成遍历且未被排除的 UID。模型不确定的记录需要人工审核。</p>
+        <div class="table-scroll"><table><thead><tr><th>UP 用户</th><th>分类依据</th><th>关系遍历</th><th>Furry 发现</th><th>种子得分</th><th class="align-right">操作</th></tr></thead><tbody id="profileRows"></tbody></table></div>
+        <div id="dataEmpty" class="empty-state" hidden><span class="empty-symbol">⌘</span><h3>从第一颗种子开始</h3><p>添加 UID，或导入项目已有数据。真实结果会出现在这里。</p><button class="button primary" data-action="add-seed">＋ 添加种子 UID</button></div>
+        <div class="pagination"><span id="paginationText">第 1 页</span><div><button id="previousPage" class="button secondary compact">← 上一页</button><button id="nextPage" class="button secondary compact">下一页 →</button></div></div>
+      </section>
+
+      <div id="settingsSection" hidden>
+        <section class="card"><div class="section-header"><div><div class="eyebrow">ACCOUNT RESOURCES</div><h2>Cookie 池</h2><p>为采集提供登录状态。凭据只保存在本机，不在列表和日志中回显。</p></div><button class="button secondary compact" id="importCookies">导入根目录 cookies.json</button></div><div id="cookieSummary" class="inline-summary"></div><div id="cookieList" class="cookie-list"></div><form id="cookieForm" class="cookie-form"><label>账号备注<input id="cookieLabel" required maxlength="60" placeholder="例如：主采集账号" autocomplete="off"></label><label class="cookie-secret">完整 Cookie<input id="cookieValue" required type="password" placeholder="粘贴包含 SESSDATA 的完整 Cookie" autocomplete="off" spellcheck="false"></label><button class="button primary" type="submit">＋ 添加账号</button></form><p class="form-note">启用账号按使用时间轮换。遇到平台风控会暂停整轮采集并冷却，不会切换账号继续请求。</p></section>
+        <section class="card settings-card"><div class="section-header"><div><div class="eyebrow">COLLECTION SETTINGS</div><h2>采集设置</h2><p>每轮有明确数量上限，关系分页可以在后续轮次继续。</p></div><span id="modelStatus" class="status-badge neutral">检查模型中</span></div><form id="settingsForm"><div class="settings-grid"><label>每轮最多处理 UID<input id="maxUsers" type="number" min="1" max="500" required><small>新发现的候选也计入本轮上限。</small></label><label>每个方向新增页数<input id="pagesPerRun" type="number" min="1" max="20" required><small>粉丝与关注分别计算；每页请求 50 条。</small></label><label>请求间隔（秒）<input id="requestInterval" type="number" min="0.5" max="30" step="0.1" required><small>所有账号共用请求间隔，最低 0.5 秒。</small></label><label>头像识别模型<select id="modelSelect"><option value="mobilenetv3_v0.1_dist">DeepGHS · MobileNetV3</option><option value="caformer_s36_v0.1">DeepGHS · CAFormer S36</option><option value="yolo">项目原有 YOLOv8</option></select><small id="modelHint">模型运行在本机，头像不会上传至第三方。</small></label><label>自动确认 Furry 阈值<input id="positiveThreshold" type="number" min="0.5" max="0.99" step="0.01" required><small id="thresholdHint">中间区间留待人工审核。</small></label></div><div class="settings-footer"><p>修改设置前请先暂停采集；人工判定始终优先于模型结果。</p><button class="button primary" type="submit">保存采集设置</button></div></form></section>
+      </div>
+
+      <details class="card scoring-card" id="scoringCard"><summary><span><span class="score-dot">◈</span> 种子如何计分？</span><span class="subtle">查看基础分、父级继承与发现收益 ＋</span></summary><div class="scoring-content"><div class="formula">总分 = 手动基础分 + 父级加成 + 发现收益 + 命中质量 <span>≤ 100</span></div><div class="score-explanation"><p><b>01 · 手动基础分</b>每个种子默认 10 分，可在 0–20 之间设置。</p><p><b>02 · 父级加成</b>首次发现时父级得分 × 10%，最多 10 分。保存快照，不随父级反复累加。</p><p><b>03 · 发现收益</b>50 × (1 − e<sup>−k/20</sup>)。发现越多得分越高，边际收益递减。</p><p><b>04 · 命中质量</b>20 × k / (n + 10)。小样本采用平滑，避免偶然一次命中占据高分。</p></div><p class="form-note">k = 直接关系中去重后的 Furry Yes 数；n = 已判定 Yes 或 No 的唯一关系数。粉丝与关注重复出现只计一次。子账号被人工排除后，会撤回对应收益。仅计算直接发现，不递归累计整棵关系树。</p></div></details>
+      <section class="card events-card"><div class="section-header"><div><div class="eyebrow">ACTIVITY</div><h2>采集动态</h2></div><span class="live-label"><i></i> 本地实时状态</span></div><div id="events" class="events-list"></div></section>
+      <footer class="page-footer"><span>FURRY LAB / LOCAL COLLECTOR</span><span id="lastRefresh">数据尚未加载</span></footer>
+    </div>
+  </main>
+  <dialog id="seedDialog"><form id="seedForm"><div class="dialog-header"><div><div class="eyebrow">NEW SEEDS</div><h2>添加种子 UID</h2></div><button type="button" class="icon-button" data-action="close-seed" aria-label="关闭">×</button></div><p class="form-note">这些 UID 尚未遍历粉丝与关注列表。重复 UID 会跳过，不覆盖已有判定。</p><label>UID 列表<textarea id="seedUids" rows="7" placeholder="每行一个 UID，也支持逗号或空格分隔" required></textarea></label><div class="two-columns"><label>手动基础分<input id="seedBase" type="number" min="0" max="20" value="10" required></label><label>身份状态<select id="seedVerdict"><option value="unknown">待识别</option><option value="yes">我已确认是 Furry</option></select></label></div><div class="dialog-footer"><button type="button" class="button secondary" data-action="close-seed">取消</button><button type="submit" class="button primary">添加到种子池 ↗</button></div></form></dialog>
+  <dialog id="referenceDialog" class="reference-dialog"><div class="dialog-header"><div><div class="eyebrow">HISTORICAL REFERENCE</div><h2>历史参考资料</h2></div><button type="button" class="icon-button" id="closeReferences" aria-label="关闭历史参考">×</button></div><p class="form-note">以下只是旧记录，不计入新数据集，也不参与评分。点击“仅提取 UID”会建立待识别的新种子，重新获取资料与头像。</p><div class="reference-toolbar"><input id="referenceSearch" type="search" placeholder="搜索历史昵称或 UID" aria-label="搜索历史参考"><button class="button secondary compact" id="loadReferenceFiles">载入项目历史 JSON</button></div><div class="table-scroll"><table><thead><tr><th>UID / 历史昵称</th><th>来源文件</th><th>旧命中标记（仅参考）</th><th>操作</th></tr></thead><tbody id="referenceRows"></tbody></table></div><div class="pagination"><span id="referenceCount">0 条参考</span><div><button class="button secondary compact" id="referencePrevious">上一页</button><button class="button secondary compact" id="referenceNext">下一页</button></div></div></dialog>
+  <div id="drawerBackdrop" class="drawer-backdrop" hidden></div><aside id="detailDrawer" class="detail-drawer" hidden aria-label="UID 详情"><button class="drawer-close icon-button" id="closeDrawer" aria-label="关闭详情">×</button><div id="drawerContent"></div></aside>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
