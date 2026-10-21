@@ -1,307 +1,114 @@
-﻿# Bilibili Spider 操作手册
+# 旧版 CLI 与 JSON 数据操作手册
 
-## 项目概述
+本文适用于 `main.py`、`bfs_crawler.py` 及旧版 JSON 整理脚本。当前 Furry Lab 面板的安装和操作见 [README](README.md) 与 [PANEL](PANEL.md)。
 
-BFS 广度优先爬虫 + YOLO 头像识别 + 关键词匹配，自动从 B 站用户关系网络中识别福瑞用户。
+两套流程独立：CLI 读取 `config/settings.py` 和根目录 `cookies.json`，使用 `data/*.json`；面板使用 `data/panel/panel.sqlite3`。CLI 不会修改面板中的人工判定、账号设置或采集任务；面板导入历史参考也不会自动继承旧分类。避免同时运行两套采集，以免请求叠加。
 
-**核心流程：** 种子 UID → 获取粉丝/关注列表 → YOLO+关键词检测 → 命中的加入待遍历队列 → 继续扩散
+## 1. 环境与文件
 
-```
-种子 UID → API 获取关注/粉丝 → YOLO 头像检测 + 关键词匹配
-    ├─ 命中且有数据 → matched_done.json（可做种子，去重库）
-    ├─ 命中但无数据 → matched_pending.json（待 BFS 遍历）
-    └─ 未命中       → not_matched.json（跳过标记）
-```
+在项目根目录创建独立环境并安装旧版依赖。以下为 Windows PowerShell 示例：
 
----
-
-## 环境准备
-
-### 依赖安装
-
-```bash
-pip install -r requirements.txt
+```powershell
+python -m venv .venv-legacy
+.\.venv-legacy\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv-legacy\Scripts\python.exe main.py help
 ```
 
-核心依赖：`requests` `openpyxl` `ultralytics` `opencv-python` `pillow` `numpy`
+后续示例中的 `python` 指此环境的解释器。可激活环境后使用，或替换成 `.\.venv-legacy\Scripts\python.exe`。旧版依赖包括 Ultralytics、OpenCV、requests、Pillow、NumPy 和 openpyxl；Excel 整理与合并脚本另需：
 
-### Cookie 配置
-
-1. 在浏览器登录 B 站，打开开发者工具 → Application → Cookies → 复制完整的 Cookie 字符串
-2. 在项目根目录创建 `cookies.json`（参考 `cookies.example.json`）：
-
-```json
-["完整的Cookie字符串1", "完整的Cookie字符串2"]
+```powershell
+python -m pip install pandas
 ```
 
-Cookie 数量决定并行线程数。每个 Cookie 字符串必须包含 `SESSDATA` 字段。
+YOLO 功能需要 `models/furry1500x200.pt`。权重的来源、许可和模型准备说明见 [README](README.md)；安装 Python 依赖不会自动准备该文件。模型检测的是头像内容，分数不能证明账号身份。
 
-### 模型文件
+从 `cookies.example.json` 复制一份为 `cookies.json`，在本机填写完整 Cookie。旧 CLI 只接受字符串数组，且每项须包含 `SESSDATA`；面板支持的分组对象格式不适用于此处。不要把真实凭据提交到仓库或公开日志。旧 CLI 加载凭据时会打印末尾片段，分享终端输出前应去除这些片段。
 
-确保 `models/furry1500x200.pt` 存在（YOLO 训练好的福瑞头像识别模型）。
+## 2. 配置与数据
 
----
+旧版配置集中在 `config/settings.py`：
 
-## 新项目首次启动
+| 配置 | 用途 |
+| --- | --- |
+| `COOKIES_FILE` | 根目录 Cookie 文件 |
+| `YOLO_MODEL_PATH`、`YOLO_CONF_THRESHOLD` | YOLO 权重位置与检测阈值 |
+| `FURRY_KEYWORDS` | 简介关键词 |
+| `EXCEL_FILE` | Excel 整理、合并的输入文件 |
+| `MATCHED_DONE_PATH`、`MATCHED_PENDING_PATH` | 已匹配记录与待遍历种子 |
+| `NOT_MATCHED_PATH`、`ERROR_PATH` | 排除记录与失败记录 |
+| `HIT_DIR`、`MISS_DIR`、`AVATAR_DIR` | 图片目录 |
+| `REQUEST_INTERVAL_MIN`、`REQUEST_INTERVAL_MAX` | 旧流程调用的随机等待设置 |
 
-```
-第 1 步：整理 Excel → JSON       python main.py organize
-第 2 步：检查数据完整性           python check_stats.py
-第 3 步：补充缺失字段             python main.py update
-第 4 步：统一字段格式             python main.py backfill
-第 5 步：初始化种子权重 + 重建种子库  python main.py seed-weight
-第 6 步：启动 BFS 爬虫            python main.py crawl
-```
+这些配置不等同于面板的请求调度设置。旧脚本有各自的请求、等待与错误处理实现；不能将当前面板“每次 API 前等待、风控整轮暂停”的保证套用到所有旧命令，也没有任何配置值能保证不受平台限流。
 
-### 各步说明
+旧 JSON 库采用对象结构，包含 `meta` 和 `uids` 数组：
 
-**第 1 步 — `python main.py organize`**
-从 `bilibili_up_export.xlsx` 读取 UID 数据，按是否有粉丝/关注数分入 `matched_done.json` 和 `matched_pending.json`。
+| 文件 | 旧流程用途 |
+| --- | --- |
+| `data/matched_pending.json` | 待遍历的已匹配 UID，作为 BFS 初始队列 |
+| `data/matched_done.json` | 旧流程已处理的匹配记录 |
+| `data/not_matched.json` | 不匹配、后续跳过的记录 |
+| `data/error.json` | 失败后进入跳过集合的记录 |
+| `hit/`、`miss/` | 旧分类对应的本地图片 |
+| `avatars/`、`_cache/` | 图片或临时缓存 |
 
-**第 2 步 — `python check_stats.py`**
-对比四个 JSON 数据库的字段覆盖率，检查数据是否丢失。
+常用记录字段为 `uid`、`name`、`hit`、`avatar_url`、`intro`、`fan_count`、`follow_count`、`seed_weight`、`parent_seed`、`discovered_uids`、`update_time`。其中人数统计与实际获取的关系条数不同；旧文件中的 `done` 也不能作为完整关系网络的证明。
 
-**第 3 步 — `python main.py update`**
-扫描 `matched_done.json` 和 `matched_pending.json`，调用 B 站 API 补充缺失的 `avatar_url` / `fan_count` / `follow_count`，多线程并行。
+整理、合并、字段补齐、权重重建和分类同步会写回旧数据。先停止 CLI 任务并备份相关 JSON、Excel 和图片，再执行这些命令。文件工具提供的锁与轮转备份不替代独立备份。
 
-**第 4 步 — `python main.py backfill`**
-统一所有 JSON 记录为 11 个标准字段，缺失的填 `null`。
+## 3. 采集与更新命令
 
-**第 5 步 — `python main.py seed-weight`**
-为每条记录添加 `seed_weight` / `parent_seed` / `discovered_uids` 字段，清理 `matched_pending.json` 中的重复和已处理 UID，按权重排序。
+| 命令 | 实际行为 |
+| --- | --- |
+| `python main.py help` | 打印主入口说明 |
+| `python main.py fetch <UID>` | 查询指定 UID 的资料与粉丝/关注统计，不执行 BFS |
+| `python main.py crawl` | 加载 `cookies.json`，从旧 `matched_pending.json` 建立队列并持续处理 |
+| `python main.py update` | 扫描旧匹配库与排除库，补充缺失的资料字段 |
+| `python main.py update --force` | 对扫描到的记录强制重新获取资料 |
+| `python main.py update --days 7` | 在缺失项之外，也更新超过指定天数未更新的记录 |
+| `python main.py webcam` | 使用摄像头预览 YOLO 检测，按 `q` 退出 |
 
-**第 6 步 — `python main.py crawl`**
-启动 BFS 爬虫，自动从种子库扩散。会持续运行，按 `Ctrl+C` 停止。
+`crawl` 没有新增种子或指定种子的命令行参数，需要先准备旧 JSON 队列，例如从已有 Excel 执行 `organize`。空队列不会自动从面板取得候选。
 
----
+旧 BFS 读取简介进行关键词匹配，未命中时尝试 YOLO 头像识别；确认匹配后才获取关系并继续发现 UID。关键词匹配器虽然提供昵称和标签方法，当前 BFS 实际传入的是简介，不能描述成已采集近期视频标题与标签。关系调用对粉丝、关注分别使用 `max_pages=2`，每页请求 50 条，隐私和接口限制可能使实际结果更少。
 
-## 工作流与典型场景
+旧 BFS 和更新器按已加载 Cookie 条目创建线程，不使用面板的 20 线程上限或每账号调度器。`update` 实际解析 `--force` 和 `--days`，**不支持 `--threads`**；源码旧注释中的该参数未实现。增加凭据数量不保证速度、权限或接口可用性。
 
-### 日常爬取
+运行中的采集可按 `Ctrl+C` 停止；异常退出后先核对已保存 JSON 与失败记录，再决定如何恢复。网络错误、权限不足、隐私限制及列表为空应结合实际日志判断，不能互相替代。
 
-```bash
-python main.py crawl          # 持续 BFS 扩散
-```
+## 4. 数据整理命令
 
-爬虫每次会：
-1. 从 `matched_pending.json` 取权重最高的种子
-2. 获取该 UID 的关注和粉丝列表
-3. 逐个检测头像（YOLO）和简介/昵称（关键词）
-4. 命中 → 写入 `matched_done.json` + 加入队列继续扩散
-5. 不命中 → 写入 `not_matched.json`
-6. 遇到错误 → 写入 `error.json`，不再重试
+| 命令 | 写入范围与注意事项 |
+| --- | --- |
+| `python main.py organize` | 读取配置的 Excel，重建旧 JSON 分类文件；需要 pandas |
+| `python main.py merge` | 合并 Excel 基础资料与已有旧 JSON 数据；需要 pandas |
+| `python main.py backfill` | 对四个旧 JSON 库补齐并整理标准字段，缺失信息仍为 `null` 或默认值 |
+| `python main.py seed-weight` | 补充旧权重字段，重建待遍历种子库 |
+| `python main.py seed-weight --repair` | 根据保存的发现 UID 去重并修复旧权重 |
+| `python main.py seed-weight --reset` | 清零旧权重及关联权重字段，并重建种子库 |
+| `python main.py mark-intro` | 将 `hit` 字段含“简介”的对应图片标记为带“简介”后缀的文件名 |
 
-### 人工审核后同步
+`organize` 和 `merge` 优先使用 `EXCEL_FILE`，并有历史文件名回退查找。对新资料应明确设置输入路径，不依赖本机旧文件名。`seed-weight` 使用的是旧版权重体系，不是面板的 Furry 匹配分或有上限的图谱收益分。
 
-当你在 `hit/` 或 `miss/` 目录下人工移动图片后：
+## 5. 旧图片分类同步
 
-```bash
-python main.py reconcile                  # 同步分类结果到 JSON
-python main.py reconcile --download       # 同时补全缺失的图片
-python main.py reconcile --dry-run        # 试运行，只看不改
-```
-
-`reconcile` 的行为：
-- 图片在 `hit/` → JSON 更新为 `furry-manual`
-- 图片在 `miss/` + 关键词命中 → 移回 `hit/`（关键词优先级最高）
-- 图片在 `miss/` + 仅 YOLO 命中 → JSON 更新为 `none`（人工判定非福瑞）
-
-### 数据维护
-
-```bash
-python main.py update             # 扫描补全缺失字段
-python main.py update --force     # 强制刷新所有数据
-python main.py update --days 7    # 仅更新 7 天前的记录
-python main.py update --threads 2 # 手动指定线程数
-python main.py merge              # 从 Excel 恢复基础数据 + 合并 BFS 新发现
-python main.py mark-intro         # 标记简介命中的图片（重命名为 {uid}简介.jpg）
+```powershell
+python main.py reconcile --dry-run
+python main.py reconcile
+python main.py reconcile --download
 ```
 
-### 图片目录管理
+- `--dry-run` 跳过同步和下载步骤，不写判定；当前实现只报告执行模式，不生成逐 UID 差异预览。
+- `reconcile` 扫描 `hit/`、`miss/` 的纯数字文件名 JPEG，依据图片位置和旧 `hit` 字段写回旧 JSON。
+- 旧逻辑保留关键词优先行为：被识别为关键词命中的记录放入 `miss/` 后，可能被移动回 `hit/`，不能视为人工排除始终优先。
+- `--download` 在同步后补充匹配库中缺失的头像；当前函数默认最多下载 100 张，不包含排除库。
 
-- `hit/` — 命中（福瑞）头像
-- `miss/` — 未命中头像（人工审核后移走）
-- `_cache/` — 下载缓存（不入 Git）
+带“简介”后缀的图片不属于同步扫描器支持的纯数字文件名。需要可靠人工确认、排除及批量审核时，使用 [面板审核](PANEL.md)；其结果保存在 SQLite 中，与移动旧图片的操作相互独立。
 
-**标注简介命中图片：**
-```bash
-python main.py mark-intro
-# 将 hit/ 里关键词命中的图片重命名为 uid简介.jpg，方便人工区分
-```
+## 6. 当前推荐入口
 
-### 种子权重体系
+新采集、分页续采、失败状态区分、20 线程设置、每账号请求前等待、完整证据展示和图片批量审核均以当前面板为准。完整功能边界见 [功能说明](功能说明.md)，速度与请求预算见 [PERFORMANCE](PERFORMANCE.md)。旧脚本保留用于维护历史资料，不会自动同步网站或榜单。
 
-```bash
-python main.py seed-weight           # 初始化权重字段
-python main.py seed-weight --reset   # 重置所有权重为 0
-python main.py seed-weight --repair  # 从 discovered_uids 重建权重
-```
+## 7. 独立 Excel 更新脚本
 
-权重规则：种子 A 找到 10 个福瑞 → A 的权重 = 10，发现的每个 B 初始权重 = 1。BFS 优先遍历权重高的种子。
-
-### 数据合并
-
-如果旧版 Excel 有完整的基础数据，而 JSON 数据库经过了多次 BFS 更新，用 `merge` 安全合并：
-
-```bash
-python main.py merge
-# 以 Excel 为基础骨架，JSON 的非空字段覆盖上去
-# BFS 新发现的 UID（不在 Excel 中）追加保留
-# not_matched.json / error.json 完全不动
-```
-
----
-
-## 完整命令速查
-
-| 命令 | 说明 |
-|------|------|
-| `python main.py crawl` | 启动 BFS 爬虫 |
-| `python main.py fetch <UID>` | 单次获取指定 UID 信息 |
-| `python main.py webcam` | 摄像头实时 YOLO 检测（测试模型） |
-| `python main.py organize` | Excel → JSON 数据库初始化 |
-| `python main.py update` | 扫描补全缺失字段（多线程） |
-| `python main.py update --force` | 强制刷新全部数据 |
-| `python main.py update --days N` | 仅更新超过 N 天的记录 |
-| `python main.py reconcile` | 人工审核后分类同步 |
-| `python main.py reconcile --download` | 同步 + 下载缺失头像 |
-| `python main.py reconcile --dry-run` | 试运行，只看不改 |
-| `python main.py backfill` | 统一 JSON 字段格式 |
-| `python main.py merge` | Excel + JSON 安全合并 |
-| `python main.py mark-intro` | 标记简介命中图片 |
-| `python main.py seed-weight` | 初始化种子权重 + 重建种子库 |
-| `python main.py seed-weight --reset` | 重置所有权重 |
-| `python main.py seed-weight --repair` | 修复权重 |
-| `python check_stats.py` | 检查数据完整性 |
-
----
-
-## 独立工具脚本
-
-| 脚本 | 说明 |
-|------|------|
-| `python check_stats.py` | 四个 JSON 库的字段覆盖率统计 |
-| `python dedup_pending.py` | `matched_pending.json` 去重 |
-| `python test_yolo.py <图片>` | YOLO 模型单元测试 |
-| `python tests/test_yolo.py <图片>` | 同上（tests 目录版） |
-
----
-
-## 数据文件说明
-
-### JSON 数据库（运行时生成于 `data/`）
-
-| 文件 | 内容 |
-|------|------|
-| `matched_done.json` | 已确认福瑞 + 有粉丝/关注数据（种子库 + 去重库） |
-| `matched_pending.json` | 已确认福瑞但暂无数据（待 BFS 遍历队列） |
-| `not_matched.json` | 非福瑞用户（跳过标记，防止重复消耗） |
-| `error.json` | API 请求永久失败的 UID（404 封号等，不再重试） |
-
-### 每条记录的 11 个标准字段
-
-```json
-{
-  "uid": 123456,
-  "name": "昵称",
-  "hit": "furry" | "furry-manual" | "keyword-简介" | "none" | null,
-  "avatar_url": "https://...",
-  "intro": "个人简介",
-  "fan_count": 1000,
-  "follow_count": 200,
-  "seed_weight": 5,
-  "parent_seed": 789,
-  "discovered_uids": [111, 222, 333],
-  "update_time": "2026-07-12 14:30:00"
-}
-```
-
-### `hit` 字段含义
-
-| 值 | 来源 |
-|----|------|
-| `furry` | YOLO 模型检测命中 |
-| `keyword-昵称` / `keyword-简介` / `keyword-昵称 简介` | 关键词匹配命中 |
-| `furry-manual` | 人工审核确认（reconcile） |
-| `none` | 人工审核判定非福瑞 |
-| `null` | 尚未检测 |
-
----
-
-## 目录结构
-
-```
-bilibili-spider/
-├── main.py              # 入口，命令路由
-├── bfs_crawler.py       # BFS 爬虫核心（多线程）
-├── bilibili/            # B站 API 封装
-│   ├── api.py           # get_up_info / get_up_stat / 关注粉丝列表
-│   ├── json_db.py       # JSON 数据库读写（带文件锁）
-│   ├── wbi_auth.py      # WBI 签名算法
-│   └── excel.py         # Excel 辅助
-├── classifier/          # 识别模块
-│   ├── yolo_detector.py # YOLO 头像检测
-│   └── keyword_matcher.py # 关键词匹配
-├── config/
-│   └── settings.py      # 全局配置（路径/阈值/关键词列表）
-├── models/
-│   └── furry1500x200.pt # YOLO 模型权重文件
-├── data/                # JSON 数据库（运行时生成，不入 Git）
-├── tests/               # 单元测试
-├── fetch/               # 批量抓取脚本（旧版工具集）
-├── update/              # 数据更新脚本（旧版工具集）
-├── requirements.txt     # Python 依赖
-├── cookies.example.json # Cookie 配置模板
-├── .gitignore           # Git 忽略规则
-├── README.md            # 项目说明
-└── MANUAL.md            # 本操作手册
-```
-
----
-
-## 常见问题
-
-### Q: `cookies.json` 格式不对？
-确保是标准 JSON 数组，每个元素是完整的 Cookie 字符串。参考 `cookies.example.json`。
-
-### Q: 提示 Cookie 过期？
-B 站 Cookie 中的 `SESSDATA` 有效期通常数周到数月。重新从浏览器复制即可。
-
-### Q: YOLO 模型加载失败？
-确认 `models/furry1500x200.pt` 存在，且 `ultralytics` 已安装：`pip install ultralytics`。
-
-### Q: 被限流（-352 错误）？
-爬虫内置了 0.5~1.0 秒随机延迟。如果仍被限流：
-- 减少 `MAX_CRAWL_PER_ROUND`（`config/settings.py`）默认 50
-- 增大 `REQUEST_INTERVAL_MIN` / `REQUEST_INTERVAL_MAX`
-- 增加更多 Cookie 分散请求
-
-### Q: 用户不存在（-404 错误）？
-该 UID 已注销或封号。爬虫会自动移入 `error.json`，不再重试。
-
-### Q: `matched_done.json` 数据大量丢失？
-可能是 `update` 过程中的覆盖问题。用 `python main.py organize` 重新从 Excel 生成，再用 `python main.py merge` 合并。
-
-### Q: 如何只爬取不下载图片？
-在 `config/settings.py` 中设置相关参数或修改 BFS 爬虫逻辑。默认会在 YOLO 检测时下载头像。
-
----
-
-## 技术架构
-
-```
-main.py（命令路由）
-    ├─ bfs_crawler.py    ← BFS 爬虫主逻辑
-    │   ├─ bilibili.api  ← B站 API（WBI 签名 + Cookie）
-    │   ├─ classifier.yolo_detector   ← YOLO 模型推理
-    │   ├─ classifier.keyword_matcher ← 文本关键词匹配
-    │   └─ bilibili.json_db ← 读写 JSON 数据库（文件锁）
-    │
-    ├─ update_uids.py    ← 补全数据（多线程 API 请求）
-    ├─ reconcile.py      ← 人工审核后同步
-    ├─ organize_uids.py  ← Excel → JSON
-    ├─ merge_from_excel.py ← 安全合并
-    ├─ backfill_schema.py ← 字段格式统一
-    ├─ seed_weight.py    ← 种子权重管理
-    └─ mark_intro_hits.py ← 简介图片标记
-```
+`update/bilibili.py` 保留旧 Excel 更新流程，输入文件位于 `update/` 目录。凭据优先读取本机 `BILIBILI_COOKIE` 环境变量，否则读取项目根目录 `cookies.json` 字符串数组；不要编辑源码填入真实 Cookie。此脚本不使用面板账号池或面板调度器。

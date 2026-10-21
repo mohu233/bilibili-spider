@@ -17,7 +17,7 @@ API 说明：
 
 注意事项：
   1. WBI 密钥每天更新一次，程序会缓存密钥，过期自动刷新
-  2. 需要在脚本头部填写你的 Cookie（SESSDATA 字段）
+  2. 从项目根目录 cookies.json 或 BILIBILI_COOKIE 环境变量读取凭据
   3. 请勿频繁请求，建议每次请求间隔 1-2 秒，避免 IP 被限
 
 依赖安装：
@@ -41,16 +41,29 @@ import openpyxl
 # 配置区 —— 请根据实际情况修改
 # ============================================================
 
-# Bilibili Cookie 列表，每个线程使用不同的 Cookie，降低单账号限流风险
+# 本机凭据配置；不要把真实 Cookie 写入源码
 # 从浏览器开发者工具中复制（F12 → Network → 任意请求 → Request Headers → Cookie）
 # 至少需要 SESSDATA 字段
-# 如果有多个账号就填多个 Cookie，会开多线程并行抓取
-COOKIES = [
-    # Cookie 1 （已填好）
-    "buvid3=9430ED47-BE5E-E06D-2A07-62D92D66957893493infoc; b_nut=1774936293; _uuid=E7E10EF42-BA91-B6A4-A576-93110D1559F5E93430infoc; buvid_fp=f3ef882e51e1e36b13738037eace796e; buvid4=3A92A10A-B898-AC38-2414-E3F4A9AD090194122-026033113-6O83AcbCCPf/sTezyu/XOQ%3D%3D; home_feed_column=5; browser_resolution=1707-906; CURRENT_FNVAL=4048; CURRENT_QUALITY=0; rpdid=|(um|kJlRY)m0J'u~~RmJYJ|u; theme-tip-show=SHOWED; theme-avatar-tip-show=SHOWED; SESSDATA=9d126d67%2C1798170753%2C40ca0%2A62CjAgHFcZcaS31GBLAXUN5_ABuWU9xuJDse…DhQSnNmSmhwdjBhN19hSk94cmdLQ3UtcEFCS3RRa2N4VWJrVU5zZFpYRDlpN2pqek9zWk82WnROQkM3U0FNaGJNZmFQeWd3IIEC; bili_jct=35850447d7aca0613f41e7d963a5b054; DedeUserID=363159975; DedeUserID__ckMd5=8fd0214ad39063d3; sid=5rqdv18o; b_lsid=460EA8F3_19F0DC8EE0E; bsource=search_google; bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODI4Nzc5NDksImlhdCI6MTc4MjYxODY4OSwicGx0IjotMX0.MtuDip6ZILXSyjbnF376eOGAoiMvLy62HKooeIzOPjY; bili_ticket_expires=1782877889; bp_t_offset_363159975=1218827885138149376",
-    # Cookie 2（请替换为你第二个账号的 Cookie）
-    "buvid3=D98FAC15-A051-2E62-AE72-6115CB655D4344118infoc; b_nut=1781274644; buvid4=00D8FF56-0976-3D4D-CA77-6ACD59FC103A44503-026061222-oSfyrKLbSmpLhZioCx1Q5g%3D%3D; buvid_fp=487e1c6cbd1ef01e3b78ccfafc231e5b; _uuid=7B4F105101-F10FA-1D16-8A98-141FCCAC4FC1055844infoc; theme-tip-show=SHOWED; CURRENT_QUALITY=0; rpdid=|(k||lukRk)R0J'u~)uRumm|J; theme-avatar-tip-show=SHOWED; theme-switch-show=SHOWED; DedeUserID=10624434; DedeUserID__ckMd5=be62134919ff0ba3; SESSDATA=7fcafb42%2C1797952449%2Ce247b%2A61CjBRe1P1zZQRzUQtL7FISFE-9Lsd_eDLnlvx3_pbeVYZdiadDC4vNKyxPlZB8mVLinASVkhseUFoenNDa0lXbVBsQ2gwU29rTzVKUTZtaWFKRlJqMUE3T3RpUHR2dlRhU0NTNHpJaG44VGdfc2lZVEJwWThEa0NZNWlhUVBqTFBQV3BUN3JOOG5nIIEC; bili_jct=75cad187c77335a95e91be199d8658ce; sid=5iqhmn5l; bmg_af_switch=1; bmg_src_def_domain=i2.hdslb.com; hit-dyn-v2=1; bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODI4NzY5MTksImlhdCI6MTc4MjYxNzY1OSwicGx0IjotMX0.qHJ83PcS62Ja79Su0wTqF9NAU9JvEYb7W4vKvp1yzUU; bili_ticket_expires=1782876859; home_feed_column=4; bsource=search_bing; CURRENT_FNVAL=2000; bp_t_offset_10624434=1218939575762681856; browser_resolution=1355-786; b_lsid=A5FB1147_19F0DEA59B5",
-]
+# 本机 cookies.json 使用字符串数组；环境变量仅提供单个 Cookie
+def _load_cookies() -> List[str]:
+    """Read local credentials without embedding them in the source code."""
+    environment_cookie = os.environ.get("BILIBILI_COOKIE", "").strip()
+    if environment_cookie:
+        return [environment_cookie]
+    cookie_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cookies.json")
+    try:
+        with open(cookie_file, "r", encoding="utf-8-sig") as stream:
+            values = json.load(stream)
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        raise RuntimeError("无法读取根目录 cookies.json，请检查文件格式和权限") from None
+    if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+        raise RuntimeError("cookies.json 必须为 Cookie 字符串数组")
+    return [value.strip() for value in values if value.strip() and "SESSDATA=" in value]
+
+
+COOKIES = _load_cookies()
 
 # 线程数，自动根据 COOKIES 数量决定
 THREAD_COUNT = len(COOKIES)
@@ -237,6 +250,8 @@ def get_common_headers(cookie: Optional[str] = None) -> Dict[str, str]:
     Returns:
         请求头字典
     """
+    if not cookie and not COOKIES:
+        raise RuntimeError("请配置根目录 cookies.json 或 BILIBILI_COOKIE")
     cookie_str = cookie if cookie else COOKIES[0]
     return {
         "User-Agent": (
@@ -775,7 +790,7 @@ def main():
     placeholder_count = sum(1 for c in COOKIES if "填入" in c)
     valid_count = len(COOKIES) - placeholder_count
     if valid_count == 0:
-        print("[错误] 请先在 COOKIES 列表中填写你的 Bilibili Cookie！")
+        print("[错误] 请先配置根目录 cookies.json 或 BILIBILI_COOKIE！")
         print("       获取方式：浏览器登录 bilibili.com → F12 → Network → 任意请求")
         print("       → Request Headers → Cookie → 复制")
         return

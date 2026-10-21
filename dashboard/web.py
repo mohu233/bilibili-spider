@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .collector import Collector
 from .store import Store, now, uid
+from .image_review import ImageReviewService, ImageReviewConflict
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -22,6 +23,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.token=secrets.token_urlsafe(32)
         self.store=store or Store(root)
         self.collector=collector or Collector(self.store)
+        self.image_review=ImageReviewService(self.store)
         super().__init__(('127.0.0.1',port),Handler)
         self.allowed_hosts={f'127.0.0.1:{self.server_port}',f'localhost:{self.server_port}'}
 
@@ -64,20 +66,26 @@ class Handler(BaseHTTPRequestHandler):
         query=urllib.parse.parse_qs(parts.query)
         arg=lambda k,default='':query.get(k,[default])[0]
         try:
-            if parts.path in ('/','/app.js','/style.css','/favicon.svg'):
-                filename={'/':'index.html','/app.js':'app.js','/style.css':'style.css','/favicon.svg':'favicon.svg'}[parts.path]
+            if parts.path in ('/','/app.js','/style.css','/favicon.svg','/image-review.js','/image-review.css'):
+                filename={'/':'index.html','/app.js':'app.js','/style.css':'style.css','/favicon.svg':'favicon.svg',
+                          '/image-review.js':'image-review.js','/image-review.css':'image-review.css'}[parts.path]
                 content_type={'index.html':'text/html; charset=utf-8','app.js':'text/javascript; charset=utf-8',
-                              'style.css':'text/css; charset=utf-8','favicon.svg':'image/svg+xml'}[filename]
+                              'style.css':'text/css; charset=utf-8','favicon.svg':'image/svg+xml',
+                              'image-review.js':'text/javascript; charset=utf-8','image-review.css':'text/css; charset=utf-8'}[filename]
                 self.send_data(200,(self.server.assets/filename).read_bytes(),content_type);return
             if parts.path=='/api/bootstrap':
                 self.send_data(200,{'token':self.server.token,'project_root':str(self.server.project_root),
-                                   'models':self.server.collector.classifier.availability()});return
+                                   'models':self.server.collector.classifier.availability(),
+                                   'collector_revision':2});return
             if parts.path=='/api/state':
                 state=self.server.store.state();state['worker_active']=self.server.collector.active()
+                state['workers']=self.server.collector.workers_snapshot()
+                busy=self.server.collector.busy_account_ids()
+                for account in state['accounts']:account['busy']=account['id'] in busy
                 self.send_data(200,state);return
             if parts.path=='/api/profiles':
                 self.send_data(200,self.server.store.list_profiles(arg('view','seeds'),arg('page','1'),
-                    arg('q'),arg('status'),arg('sort','score')));return
+                    arg('q'),arg('status'),arg('sort','score'),basis=arg('basis')));return
             if parts.path=='/api/profile':
                 self.send_data(200,self.server.store.profile(arg('uid')));return
             if parts.path=='/api/references':
@@ -97,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             if parts.path=='/api/export':
                 view=arg('view','seeds');page=1;records=[]
                 while True:
-                    data=self.server.store.list_profiles(view,page,limit=100)
+                    data=self.server.store.list_profiles(view,page,arg('q'),arg('status'),arg('sort','score'),limit=100,basis=arg('basis'))
                     records+=data['results']
                     if len(records)>=data['total']:break
                     page+=1
@@ -128,6 +136,12 @@ class Handler(BaseHTTPRequestHandler):
             store=self.server.store;worker=self.server.collector
             if path=='/api/seeds':
                 result=store.add_seeds(payload.get('uids',''),payload.get('base_score',10),payload.get('verdict','unknown'))
+            elif path=='/api/image-review/page':
+                result=self.server.image_review.page(payload.get('session_id'),payload.get('scope'),payload.get('limit',32))
+            elif path=='/api/image-review/commit':
+                if not isinstance(payload.get('excluded',[]),list) or not isinstance(payload.get('deferred',[]),list):
+                    raise ValueError('图片选择应为 UID 数组')
+                result=self.server.image_review.commit(payload['batch_id'],payload.get('excluded',[]),payload.get('deferred',[]))
             elif path=='/api/decision':
                 store.decision(payload['uid'],payload['decision'],payload.get('reason',''));result={'ok':True}
             elif path=='/api/base-score':
@@ -147,6 +161,8 @@ class Handler(BaseHTTPRequestHandler):
                 result=store.import_cookies()
             elif path=='/api/cookies/toggle':
                 store.account_enabled(payload['id'],payload['enabled']);result={'ok':True}
+            elif path=='/api/cookies/delete':
+                worker.delete_account(payload['id']);result={'ok':True}
             elif path=='/api/cookies/validate':
                 result=worker.validate_account(payload['id'])
             elif path=='/api/jobs/start':
@@ -155,6 +171,7 @@ class Handler(BaseHTTPRequestHandler):
                 worker.stop();result={'ok':True}
             else:self.send_data(404,{'error':'操作不存在'});return
             self.send_data(200,result)
+        except ImageReviewConflict as e:self.send_data(409,{'error':str(e),'code':e.code})
         except KeyError:self.send_data(400,{'error':'缺少必要参数'})
         except (ValueError,TypeError) as e:self.send_data(400,{'error':str(e) if isinstance(e,ValueError) else '参数类型无效'})
         except Exception:self.send_data(500,{'error':'操作未完成，请检查本地数据或运行环境'})
